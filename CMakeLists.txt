@@ -9,3 +9,8 @@ target_sources(
     PRIVATE
     main.cpp
 )
+target_compile_features(
+    coroutine_experiments_app
+    PRIVATE
+    cxx_std_20
+)
