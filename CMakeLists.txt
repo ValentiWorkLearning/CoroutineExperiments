@@ -14,3 +14,8 @@ target_compile_features(
     PRIVATE
     cxx_std_20
 )
+target_compile_options(
+    coroutine_experiments_app
+    PRIVATE
+    /await
+)
