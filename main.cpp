@@ -1,6 +1,8 @@
 #include <iostream>
 #include <experimental/coroutine>
 
+// https://blog.panicsoftware.com/your-first-coroutine/
+
 // We have to define the 'resumable' class for the way
 // of communicating between the coroutine and usual function
 class resumable
