@@ -9,7 +9,32 @@ class resumable
 {
 public:
 
-    struct promise_type;
+    // Here we declare the promise type with necessary functions 
+    struct promise_type
+    {
+        // //declaration of the coroutine handle alias- basic type for operating with coroutine;
+        using coro_handle = std::experimental::coroutine_handle<promise_type>;
+
+        resumable get_return_object()
+        {
+            return coro_handle::from_promise(*this);
+        }
+        auto initial_suspend()
+        {
+            return std::experimental::suspend_always();
+        }
+        auto final_suspend()noexcept
+        {
+            return std::experimental::suspend_always();
+        }
+
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
+
+        void return_void() {}
+    };
 
     //declaration of the coroutine handle alias- basic type for operating with coroutine;
     using coro_handle = std::experimental::coroutine_handle<promise_type>;
@@ -35,35 +60,6 @@ private:
     coro_handle m_coroutineHandle;
 };
 
-
-// Here we declare the promise type with necessary functions 
-struct resumable::promise_type
-{
-    // //declaration of the coroutine handle alias- basic type for operating with coroutine;
-    using coro_handle = std::experimental::coroutine_handle<promise_type>;
-
-    resumable get_return_object()
-    {
-        return coro_handle::from_promise(*this);
-    }
-    auto initial_suspend()
-    {
-        return std::experimental::suspend_always();
-    }
-    auto final_suspend()
-    {
-        return std::experimental::suspend_always();
-    }
-
-    void unhandled_exception()
-    {
-        std::terminate();
-    }
-
-    void return_void(){}
-};
-
-
 resumable foo()
 {
     std::cout<<"Hello"<<std::endl;
@@ -79,6 +75,7 @@ resumable foo()
 int main()
 {
     auto resumableObject = foo();
-
+    resumableObject.resume();
+    resumableObject.resume();
     return 0;
 }
