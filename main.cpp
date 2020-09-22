@@ -1,6 +1,11 @@
 #include <iostream>
 #include <experimental/coroutine>
 
+#include <array>
+#include <chrono>
+#include <thread>
+#include <cstdint>
+
 // https://blog.panicsoftware.com/your-first-coroutine/
 
 // We have to define the 'resumable' class for the way
@@ -70,6 +75,26 @@ resumable foo()
     std::cout<<"from coroutine";
 }
 
+//
+//void spiTrasnmitBuffer(
+//        std::uint8_t* _pBuffer
+//    ,   std::uint16_t _bufferSize
+//)
+//{
+//    using namespace std::chrono_literals;
+//    std::this_thread::sleep_for(100ms);
+//}
+//
+//auto commandBufferFirst = std::array{ 0x00u, 0x01u, 0x02u, 0x03u };
+//auto commandBufferSecond = std::array{ 0x04u, 0x05u, 0x06u, 0x07u,0x08u };
+//
+//void initDisplay()
+//{
+//    co_await spiTrasnmitBuffer(commandBufferFirst.data(), commandBufferFirst.size());
+//    co_await spiTrasnmitBuffer(commandBufferSecond.data(), commandBufferSecond.size());
+//}
+//
+
 //For using co_await operator we have to use the concept of 'awaitable entity'
 //the main idea is quite simple - to provide the implementation for the customization_point of the coroutine
 int main()
@@ -77,5 +102,6 @@ int main()
     auto resumableObject = foo();
     resumableObject.resume();
     resumableObject.resume();
+
     return 0;
 }
