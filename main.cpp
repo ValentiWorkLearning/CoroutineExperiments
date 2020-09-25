@@ -1,12 +1,20 @@
 #include <iostream>
-#include <experimental/coroutine>
-
 #include <array>
 #include <chrono>
 #include <thread>
 #include <cstdint>
 #include <vector>
 #include <queue>
+#include <functional>
+
+#ifdef WIN32
+#include <experimental/coroutine>
+namespace stdcoro = std::experimental;
+#else
+#include <coroutine>
+namespace stdcoro = std;
+#endif // WIN32
+
 
 // https://blog.panicsoftware.com/your-first-coroutine/
 // https://manybutfinite.com/post/anatomy-of-a-program-in-memory/
@@ -20,81 +28,12 @@
 // https://m.habr.com/ru/post/519464/ // C++20 coroutines
 // https://mariusbancila.ro/blog/2020/06/22/a-cpp20-coroutine-example/
 
-// We have to define the 'resumable' class for the way
-// of communicating between the coroutine and usual function
-class resumable
-{
-public:
-
-    // Here we declare the promise type with necessary functions 
-    struct promise_type
-    {
-        // //declaration of the coroutine handle alias- basic type for operating with coroutine;
-        using coro_handle = std::experimental::coroutine_handle<promise_type>;
-
-        resumable get_return_object()
-        {
-            return coro_handle::from_promise(*this);
-        }
-        auto initial_suspend()
-        {
-            return std::experimental::suspend_always();
-        }
-        auto final_suspend()noexcept
-        {
-            return std::experimental::suspend_always();
-        }
-
-        void unhandled_exception()
-        {
-            std::terminate();
-        }
-
-        void return_void() {}
-    };
-
-    //declaration of the coroutine handle alias- basic type for operating with coroutine;
-    using coro_handle = std::experimental::coroutine_handle<promise_type>;
-
-public:
-
-    resumable(coro_handle handle)
-        :   m_coroutineHandle{handle}
-    {
-    }
-
-    resumable(resumable&) = delete;
-    resumable(resumable&&) = delete;
-
-    bool resume()
-    {
-        if( !m_coroutineHandle.done() )
-            m_coroutineHandle.resume();
-
-        return !m_coroutineHandle.done();
-    }
-private:
-    coro_handle m_coroutineHandle;
-};
-
-resumable foo()
-{
-    std::cout<<"Hello"<<std::endl;
-    // Without resumable return type we cant't use our coroutine
-    // or without overriding the co_await operator also
-
-    co_await std::experimental::suspend_always();
-    std::cout<<"from coroutine"<< std::endl;
-}
-
-
-
 template <typename... Args>
-struct std::experimental::coroutine_traits<void, Args...> {
+struct stdcoro::coroutine_traits<void, Args...> {
     struct promise_type {
         void get_return_object() {}
-        std::experimental::suspend_never initial_suspend() { return {}; }
-        std::experimental::suspend_never final_suspend()noexcept { return {}; }
+        stdcoro::suspend_never initial_suspend() { return {}; }
+        stdcoro::suspend_never final_suspend()noexcept { return {}; }
         void return_void() {}
         void unhandled_exception() { std::terminate(); }
     };
@@ -111,7 +50,7 @@ void spiBackendImplTransmit(
 
     std::cout << "TRANSMIT SOME DATA" << std::endl;
 
-    std::experimental::coroutine_handle<>::from_address(_pUserData).resume();
+    stdcoro::coroutine_handle<>::from_address(_pUserData).resume();
 }
 
 auto spiTrasnmitCommandBufferAsync(
@@ -119,9 +58,7 @@ auto spiTrasnmitCommandBufferAsync(
     ,   std::uint16_t _bufferSize
 )
 {
-    //Set gpio here
-    std::cout << "Set GPIO" << std::endl;
-
+    std::cout << "Toggle GPIO ON" << std::endl;
     struct Awaiter
     {
         std::uint8_t* pBuffer;
@@ -133,25 +70,18 @@ auto spiTrasnmitCommandBufferAsync(
         }
         void await_resume() const noexcept
         {
-            std::cout << "constexpr void await_resume() const noexcept" << std::endl;
+            std::cout << "Toggle GPIO OFF" << std::endl;
         }
-        void await_suspend(std::experimental::coroutine_handle<> thisCoroutine) const
+        void await_suspend(stdcoro::coroutine_handle<> thisCoroutine) const
         {
             spiBackendImplTransmit( pBuffer,bufferSize, thisCoroutine.address() );
-
-            std::cout << "Reset GPIO" << std::endl;
         }
     };
 
-    return Awaiter{ _pBuffer, _bufferSize };
-}
-
-auto spiWriteAsync(
-        std::uint8_t* _pBuffer
-    ,   std::uint16_t _bufferSize
-    )
-{
-
+    return Awaiter{
+            .pBuffer = _pBuffer
+        ,   .bufferSize = _bufferSize
+    };
 }
 
 auto commandBufferFirst = std::array{ 0x00u, 0x01u, 0x02u, 0x03u };
@@ -178,18 +108,89 @@ struct Display
         initDisplay();
     }
 };
-
-//For using co_await operator we have to use the concept of 'awaitable entity'
-//the main idea is quite simple - to provide the implementation for the customization_point of the coroutine
+// TODO what is the compiler-generated code?
 int main()
 {
-    auto resumableObject = foo();
-    resumableObject.resume();
-    resumableObject.resume();
-
-    initDisplay();
-    /*std::cout << "DosomeShit" << std::endl;
-    initDisplay();*/
-
+    Display();
     return 0;
 }
+
+
+// We have to define the 'resumable' class for the way
+// of communicating between the coroutine and usual function
+class resumable
+{
+public:
+
+    // Here we declare the promise type with necessary functions 
+    struct promise_type
+    {
+        // //declaration of the coroutine handle alias- basic type for operating with coroutine;
+        using coro_handle = stdcoro::coroutine_handle<promise_type>;
+
+        resumable get_return_object()
+        {
+            return coro_handle::from_promise(*this);
+        }
+        auto initial_suspend()
+        {
+            return stdcoro::suspend_always();
+        }
+        auto final_suspend()noexcept
+        {
+            return stdcoro::suspend_always();
+        }
+
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
+
+        void return_void() {}
+    };
+
+    //declaration of the coroutine handle alias- basic type for operating with coroutine;
+    using coro_handle = stdcoro::coroutine_handle<promise_type>;
+
+public:
+
+    resumable(coro_handle handle)
+        : m_coroutineHandle{ handle }
+    {
+    }
+
+    resumable(resumable&) = delete;
+    resumable(resumable&&) = delete;
+
+    bool resume()
+    {
+        if (!m_coroutineHandle.done())
+            m_coroutineHandle.resume();
+
+        return !m_coroutineHandle.done();
+    }
+private:
+    coro_handle m_coroutineHandle;
+};
+
+resumable foo()
+{
+    std::cout << "Hello" << std::endl;
+    // Without resumable return type we cant't use our coroutine
+    // or without overriding the co_await operator also
+
+    co_await stdcoro::suspend_always();
+    std::cout << "from coroutine" << std::endl;
+}
+
+////For using co_await operator we have to use the concept of 'awaitable entity'
+////the main idea is quite simple - to provide the implementation for the customization_point of the coroutine
+
+//int main()
+//{
+//    auto resumableObject = foo();
+//    resumableObject.resume();
+//    resumableObject.resume();
+//
+//    return 0;
+//}
