@@ -45,12 +45,17 @@ void spiBackendImplTransmit(
     ,   void* _pUserData
 )
 {
-    using namespace std::chrono_literals;
-    std::this_thread::sleep_for(1100ms);
+    std::thread dmaThread = std::thread(
+        [_pUserData]
+        {
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(500ms);
 
-    std::cout << "TRANSMIT SOME DATA" << std::endl;
-
-    stdcoro::coroutine_handle<>::from_address(_pUserData).resume();
+            std::cout << "TRANSMIT SOME DATA" << std::endl;
+            stdcoro::coroutine_handle<>::from_address(_pUserData).resume();
+        }
+    );
+    dmaThread.detach();
 }
 
 auto spiTrasnmitCommandBufferAsync(
@@ -112,6 +117,9 @@ struct Display
 int main()
 {
     Display();
+
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(5000ms);
     return 0;
 }
 
