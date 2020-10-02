@@ -52,7 +52,7 @@ void spiBackendImplTransmit(
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(500ms);
 
-            std::cout << "TRANSMIT SOME DATA" << std::endl;
+            std::cout << "TRANSMIT SOME DATA" << "THREAD:" << std::this_thread::get_id() << std::endl;
             stdcoro::coroutine_handle<>::from_address(_pUserData).resume();
         }
     );
@@ -93,20 +93,6 @@ auto spiTrasnmitCommandBufferAsync(
 auto commandBufferFirst = std::array{ 0x00u, 0x01u, 0x02u, 0x03u };
 auto commandBufferSecond = std::array{ 0x04u, 0x05u, 0x06u, 0x07u,0x08u };
 
-void initDisplay()
-{
-
-    co_await spiTrasnmitCommandBufferAsync(
-            reinterpret_cast<std::uint8_t*>( commandBufferFirst.data() )
-        ,   commandBufferFirst.size()
-    );
-    co_await spiTrasnmitCommandBufferAsync(
-            reinterpret_cast<std::uint8_t*>( commandBufferSecond.data() )
-        ,   commandBufferSecond.size()
-    );
-}
-
-
 struct DisplayInitializedEvent
 {
     DisplayInitializedEvent() = default;
@@ -135,7 +121,7 @@ struct DisplayInitializedEvent
                     return false;
                 else
                     m_event.m_pSuspendedWaiter.store(this);
-                
+                return true;
             }
             void await_resume()
             {
@@ -184,8 +170,28 @@ struct Display
         , std::uint16_t* _colorToFill
     )
     {
-
+        std::cout << "void fillRectangle(); SUSPEND"<< "THREAD:"<< std::this_thread::get_id() << std::endl;
         co_await m_initializedEvent;
+        std::cout << "void fillRectangle(); RESUMED"<< "THREAD:" << std::this_thread::get_id() << std::endl;
+        
+        co_await spiTrasnmitCommandBufferAsync(
+            reinterpret_cast<std::uint8_t*>(commandBufferFirst.data())
+            , commandBufferFirst.size()
+        );
+    }
+
+    void initDisplay()
+    {
+
+        co_await spiTrasnmitCommandBufferAsync(
+            reinterpret_cast<std::uint8_t*>(commandBufferFirst.data())
+            , commandBufferFirst.size()
+        );
+        co_await spiTrasnmitCommandBufferAsync(
+            reinterpret_cast<std::uint8_t*>(commandBufferSecond.data())
+            , commandBufferSecond.size()
+        );
+        m_initializedEvent.notify();
     }
 
     DisplayInitializedEvent m_initializedEvent;
