@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <queue>
+#include <atomic>
 #include <functional>
 
 #ifdef WIN32
@@ -106,17 +107,94 @@ void initDisplay()
 }
 
 
+struct DisplayInitializedEvent
+{
+    DisplayInitializedEvent() = default;
+
+    DisplayInitializedEvent(const DisplayInitializedEvent&) = delete;
+    DisplayInitializedEvent& operator = (const  DisplayInitializedEvent&) = delete;
+
+    DisplayInitializedEvent(DisplayInitializedEvent&&) = delete;
+    DisplayInitializedEvent& operator =(DisplayInitializedEvent&&) = delete;
+
+     struct DisplayAwaiter
+        {
+            DisplayAwaiter(const DisplayInitializedEvent& _event)
+                :   m_event{_event}
+            {
+            }
+            bool await_ready()const
+            {
+                return m_event.m_isNotified;
+            }
+
+            bool await_suspend(stdcoro::coroutine_handle<> _coroHandle)noexcept
+            {
+                m_coroHandle = _coroHandle;
+                if (m_event.m_isNotified)
+                    return false;
+                else
+                    m_event.m_pSuspendedWaiter.store(this);
+                
+            }
+            void await_resume()
+            {
+            }
+
+            friend DisplayInitializedEvent;
+            private:
+                const DisplayInitializedEvent& m_event;
+                stdcoro::coroutine_handle<> m_coroHandle;
+        };
+
+    auto operator co_await() const noexcept
+    {
+        return DisplayAwaiter{ *this };
+    }
+
+    void notify()
+    {
+        m_isNotified = true;
+        if (m_pSuspendedWaiter)
+        {
+            auto pDisplayWaiter = static_cast<DisplayAwaiter*>(m_pSuspendedWaiter.load());
+            if(pDisplayWaiter)
+            {
+                pDisplayWaiter->m_coroHandle.resume();
+            }
+        }
+    }
+
+    mutable std::atomic<bool> m_isNotified{ false };
+    mutable std::atomic<void*> m_pSuspendedWaiter;
+};
+
 struct Display
 {
     Display()
     {
         initDisplay();
     }
+
+    void fillRectangle(
+        std::uint16_t _x
+        , std::uint16_t _y
+        , std::uint16_t _width
+        , std::uint16_t _height
+        , std::uint16_t* _colorToFill
+    )
+    {
+
+        co_await m_initializedEvent;
+    }
+
+    DisplayInitializedEvent m_initializedEvent;
 };
 // TODO what is the compiler-generated code?
 int main()
 {
-    Display();
+    Display display{};
+    display.fillRectangle(0, 0, 220, 220, nullptr);
 
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(5000ms);
