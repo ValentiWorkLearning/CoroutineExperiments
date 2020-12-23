@@ -2,12 +2,53 @@
 #include <cstdint>
 #include <chrono>
 #include <thread>
+#include <atomic>
+#include <cstdio>
+#include <tuple>
+
+//from cppcoro
+class when_all_counter
+{
+public:
+
+	when_all_counter(std::size_t count) noexcept
+		: m_count(count + 1)
+		, m_awaitingCoroutine(nullptr)
+	{}
+
+	bool is_ready() const noexcept
+	{
+		// We consider this complete if we're asking whether it's ready
+		// after a coroutine has already been registered.
+		return static_cast<bool>(m_awaitingCoroutine);
+	}
+
+	bool try_await(std::coroutine_handle<> awaitingCoroutine) noexcept
+	{
+		m_awaitingCoroutine = awaitingCoroutine;
+		return m_count.fetch_sub(1, std::memory_order_acq_rel) > 1;
+	}
+
+	void notify_awaitable_completed() noexcept
+	{
+		if (m_count.fetch_sub(1, std::memory_order_acq_rel) == 1)
+		{
+			m_awaitingCoroutine.resume();
+		}
+	}
+
+protected:
+
+	std::atomic<std::size_t> m_count;
+	std::coroutine_handle<> m_awaitingCoroutine;
+
+};
 
 struct Promise;
 struct TransmitTask
 {
 	explicit TransmitTask(std::uint8_t command)
-		:m_commandData{command}
+		:m_commandData{ command }
 	{
 	}
 
@@ -22,12 +63,22 @@ struct TransmitTask
 		return false;
 	}
 
-	void await_suspend( std::coroutine_handle<> _coroHandle)
+	void await_suspend(std::coroutine_handle<> _coroHandle)
 	{
 		printf("Await suspend Transmit\n");
 		using namespace std::chrono_literals;
-		std::this_thread::sleep_for(100ms);
+		std::this_thread::sleep_for(2100ms);
 		_coroHandle.resume();
+	}
+
+	void launch(when_all_counter* _pCounter)
+	{
+		printf("Started task!\n");
+		using namespace std::chrono_literals;
+		auto pthread = std::thread([_pCounter] { std::this_thread::sleep_for(2100ms); printf("Task completed!\n"); _pCounter->notify_awaitable_completed(); });
+
+		pthread.detach();
+		//_pCounter->notify_awaitable_completed();
 	}
 
 	std::uint8_t m_commandData;
@@ -56,12 +107,22 @@ struct Promise
 		printf("void return_void() \n");
 	}
 
+	void unhandled_exception()
+	{
+		while(1)
+		{
+
+		}
+	}
+
 };
 
-TransmitTask sendCommand( std::uint8_t _sendCommand)
+TransmitTask sendCommand(std::uint8_t _sendCommand)
 {
 	return TransmitTask{ _sendCommand };
 }
+
+
 
 template <typename... Args>
 struct std::coroutine_traits<void, Args ...>
@@ -73,7 +134,57 @@ struct std::coroutine_traits<void, Args ...>
 template<typename ... Tasks>
 struct WhenAllTask
 {
+	explicit WhenAllTask(Tasks&& ... tasks) noexcept
+		:m_counter{ sizeof...(Tasks) }
+		,m_taskList(std::move(tasks)...)
+	{
+	}
+	explicit WhenAllTask(std::tuple<Tasks...>&& tasks)noexcept
+		: m_counter(sizeof...(Tasks))
+		, m_taskList(std::move(tasks))
+	{}
+
+	when_all_counter m_counter;
 	std::tuple<Tasks...> m_taskList;
+
+	bool is_ready()
+	{
+		return m_counter.is_ready();
+	}
+
+	auto operator co_await() noexcept
+	{
+		struct WhenAllAwaiter
+		{
+			WhenAllAwaiter(WhenAllTask& awaitable) noexcept
+				: m_awaitable(awaitable)
+			{}
+
+			bool await_ready() const noexcept
+			{
+				printf("When all awaiter await ready\n");
+				return m_awaitable.is_ready();
+			}
+
+			bool await_suspend(std::coroutine_handle<> awaitingCoroutine) noexcept
+			{
+				printf("When all await suspend \n");
+				return m_awaitable.launch_tasks(awaitingCoroutine);
+			}
+
+			std::tuple<Tasks...>& await_resume() noexcept
+			{
+				printf("When all await resume\n");
+				return m_awaitable.m_taskList;
+			}
+
+		private:
+
+			WhenAllTask& m_awaitable;
+
+		};
+		return WhenAllAwaiter{ *this };
+	}
 
 	void await_resume()
 	{
@@ -86,21 +197,17 @@ struct WhenAllTask
 		return false;
 	}
 
-	void await_suspend(std::coroutine_handle<> _coroHandle)
+	bool launch_tasks(std::coroutine_handle<> _coroHandle)noexcept
 	{
-		printf("Await Suspend WhenAllTask\n");
+		printf("launch_tasks WhenAllTask\n");
 		std::apply(
-			[](auto&... _task)
+			[this](auto&... _task)
 			{
-				auto applyTask = [](auto&& task)
-				{
-					printf("Called from std::apply\n");
-				};
-				(applyTask(_task), ...);
-
+				(_task.launch(&m_counter), ...);
 			}
 			, m_taskList
 		);
+		return m_counter.try_await(_coroHandle);
 	}
 };
 
@@ -119,7 +226,10 @@ void initializeProcedure()
 
 	// wanted: co_await when_all( sendCommand(1),sendCommand(2) );
 
-	co_await when_all(sendCommand(1), sendCommand(2));
+	co_await when_all(sendCommand(1), sendCommand(2), sendCommand(3));
+	co_await sendCommand(4);
+	co_await sendCommand(5);
+	co_await sendCommand(6);
 }
 
 
@@ -131,7 +241,8 @@ int main()
 	while (true)
 	{
 		using namespace std::chrono_literals;
-		std::this_thread::sleep_for(100ms);
+		printf("Inside main loop \n");
+		std::this_thread::sleep_for(500ms);
 	}
 	return 0;
 }
