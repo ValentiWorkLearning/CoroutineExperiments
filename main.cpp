@@ -5,13 +5,19 @@
 #include <atomic>
 #include <cstdio>
 #include <tuple>
+#include <vector>
+#include <array>
+
+//
+//#include <cppcoro/task.hpp>
+//#include <cppcoro/when_all.hpp>
 
 //from cppcoro
-class when_all_counter
+class WhenAllCounter
 {
 public:
 
-	when_all_counter(std::size_t count) noexcept
+	WhenAllCounter(std::size_t count) noexcept
 		: m_count(count + 1)
 		, m_awaitingCoroutine(nullptr)
 	{}
@@ -47,7 +53,7 @@ protected:
 struct Promise;
 struct TransmitTask
 {
-	explicit TransmitTask(std::uint8_t command)
+	explicit constexpr TransmitTask(std::uint8_t command)
 		:m_commandData{ command }
 	{
 	}
@@ -67,11 +73,12 @@ struct TransmitTask
 	{
 		printf("Await suspend Transmit\n");
 		using namespace std::chrono_literals;
-		std::this_thread::sleep_for(2100ms);
-		_coroHandle.resume();
+		auto pthread = std::thread([_coroHandle] { std::this_thread::sleep_for(2100ms); printf("Task completed!\n"); _coroHandle.resume(); });
+		pthread.detach();
+		
 	}
 
-	void launch(when_all_counter* _pCounter)
+	void launch(WhenAllCounter* _pCounter)
 	{
 		printf("Started task!\n");
 		using namespace std::chrono_literals;
@@ -131,20 +138,31 @@ struct std::coroutine_traits<void, Args ...>
 };
 
 
-template<typename ... Tasks>
+template< typename Awaitable>
 struct WhenAllTask
 {
-	explicit WhenAllTask(Tasks&& ... tasks) noexcept
+};
+
+template<typename Awaitable>
+WhenAllTask<void> makeWhenAllTask(Awaitable awaitable)
+{
+	co_await awaitable;
+}
+
+template<typename ... Tasks>
+struct WhenAllAwaitable
+{
+	explicit WhenAllAwaitable(Tasks&& ... tasks) noexcept
 		:m_counter{ sizeof...(Tasks) }
 		,m_taskList(std::move(tasks)...)
 	{
 	}
-	explicit WhenAllTask(std::tuple<Tasks...>&& tasks)noexcept
+	explicit WhenAllAwaitable(std::tuple<Tasks...>&& tasks)noexcept
 		: m_counter(sizeof...(Tasks))
 		, m_taskList(std::move(tasks))
 	{}
 
-	when_all_counter m_counter;
+	WhenAllCounter m_counter;
 	std::tuple<Tasks...> m_taskList;
 
 	bool is_ready()
@@ -156,7 +174,7 @@ struct WhenAllTask
 	{
 		struct WhenAllAwaiter
 		{
-			WhenAllAwaiter(WhenAllTask& awaitable) noexcept
+			WhenAllAwaiter(WhenAllAwaitable& awaitable) noexcept
 				: m_awaitable(awaitable)
 			{}
 
@@ -180,7 +198,7 @@ struct WhenAllTask
 
 		private:
 
-			WhenAllTask& m_awaitable;
+			WhenAllAwaitable& m_awaitable;
 
 		};
 		return WhenAllAwaiter{ *this };
@@ -188,18 +206,18 @@ struct WhenAllTask
 
 	void await_resume()
 	{
-		printf("Await Resume WhenAllTask \n");
+		printf("Await Resume WhenAllAwaitable \n");
 	}
 
 	bool await_ready()
 	{
-		printf("Await Ready WhenAllTask\n");
+		printf("Await Ready WhenAllAwaitable\n");
 		return false;
 	}
 
 	bool launch_tasks(std::coroutine_handle<> _coroHandle)noexcept
 	{
-		printf("launch_tasks WhenAllTask\n");
+		printf("launch_tasks WhenAllAwaitable\n");
 		std::apply(
 			[this](auto&... _task)
 			{
@@ -215,23 +233,39 @@ struct WhenAllTask
 template<typename ...Args>
 auto when_all(Args&& ... args)
 {
-	return WhenAllTask{ std::forward_as_tuple(args...) };
+	return WhenAllAwaitable{ std::forward_as_tuple(args...) };
 
 }
+
+static std::array tasks = 
+{
+	TransmitTask(1),
+	TransmitTask(2),
+	TransmitTask(3),
+	TransmitTask(4)
+};
 
 void initializeProcedure()
 {
 	//co_await sendCommand(1);
 	//co_await sendCommand(2);
 
-	// wanted: co_await when_all( sendCommand(1),sendCommand(2) );
-
 	co_await when_all(sendCommand(1), sendCommand(2), sendCommand(3));
-	co_await sendCommand(4);
-	co_await sendCommand(5);
-	co_await sendCommand(6);
-}
 
+	for (auto&& task : tasks) {
+		co_await task;
+	}
+}
+//
+//cppcoro::task<> transmitData()
+//{
+//	printf("Transmit Data\n");
+//}
+//
+//void initializeDisplay()
+//{
+//	co_await cppcoro::when_all(transmitData(), transmitData(), transmitData());
+//}
 
 int main()
 {

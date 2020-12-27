@@ -1,0 +1,3 @@
+[submodule "3rdparty/cppcorolib/cppcoro"]
+	path = 3rdparty/cppcorolib/cppcoro
+	url = https://github.com/lewissbaker/cppcoro.git
