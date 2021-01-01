@@ -137,135 +137,202 @@ struct std::coroutine_traits<void, Args ...>
 	using promise_type = Promise;
 };
 
+//
+//struct WhenAllTaskPromise
+//{
+//	using TCoroutineHandle = std::coroutine_handle<WhenAllTaskPromise>;
+//	auto initial_suspend()
+//	{
+//		printf("auto initial_suspend()\n");
+//		return std::suspend_always{};
+//	}
+//
+//	auto final_suspend()
+//	{
+//		printf("auto final_suspend()\n");
+//		return std::suspend_always{};
+//	}
+//
+//	auto get_return_object()noexcept
+//	{
+//		printf("Construct return object auto get_return_object()noexcept\n");
+//		return TCoroutineHandle::from_promise(*this);
+//	}
+//
+//	void start(WhenAllCounter& counter) noexcept
+//	{
+//		m_counter = &counter;
+//		auto coroutineHandle = TCoroutineHandle::from_promise(*this);
+//		coroutineHandle.resume();
+//	}
+//
+//	void return_void() const noexcept
+//	{
+//	}
+//	WhenAllCounter* m_counter;
+//};
+//
+//template< typename Awaitable>
+//struct WhenAllTask
+//{
+//	using TPromise = WhenAllTaskPromise;
+//	using TCoroutineHandle = std::coroutine_handle<WhenAllTaskPromise>;
+//
+//	using promise_type = TPromise;
+//
+//	WhenAllTask(TCoroutineHandle coroutine) noexcept
+//		: m_suspendedCoroutine(coroutine)
+//	{}
+//
+//	void launchTask(WhenAllCounter& _counter)
+//	{
+//		m_suspendedCoroutine.promise().start(_counter);
+//	}
+//
+//	~WhenAllTask()
+//	{
+//		m_suspendedCoroutine.destroy();
+//	}
+//	TCoroutineHandle m_suspendedCoroutine;
+//};
+//
+//template<typename Awaitable>
+//WhenAllTask<void> makeWhenAllTask(Awaitable awaitable)
+//{
+//	co_await awaitable;
+//}
+//
+//template<typename ... Tasks>
+//struct WhenAllAwaitable
+//{
+//	explicit WhenAllAwaitable(Tasks&& ... tasks) noexcept
+//		:m_counter{ sizeof...(Tasks) }
+//		,m_taskList(std::move(tasks)...)
+//	{
+//	}
+//	explicit WhenAllAwaitable(std::tuple<Tasks...>&& tasks)noexcept
+//		: m_counter(sizeof...(Tasks))
+//		, m_taskList(std::move(tasks))
+//	{}
+//
+//	WhenAllCounter m_counter;
+//	std::tuple<Tasks...> m_taskList;
+//
+//	bool is_ready()
+//	{
+//		return m_counter.is_ready();
+//	}
+//
+//	auto operator co_await() noexcept
+//	{
+//		struct WhenAllAwaiter
+//		{
+//			WhenAllAwaiter(WhenAllAwaitable& awaitable) noexcept
+//				: m_awaitable(awaitable)
+//			{}
+//
+//			bool await_ready() const noexcept
+//			{
+//				printf("When all awaiter await ready\n");
+//				return m_awaitable.is_ready();
+//			}
+//
+//			bool await_suspend(std::coroutine_handle<> awaitingCoroutine) noexcept
+//			{
+//				printf("When all await suspend \n");
+//				return m_awaitable.launch_tasks(awaitingCoroutine);
+//			}
+//
+//			std::tuple<Tasks...>& await_resume() noexcept
+//			{
+//				printf("When all await resume\n");
+//				return m_awaitable.m_taskList;
+//			}
+//
+//		private:
+//
+//			WhenAllAwaitable& m_awaitable;
+//
+//		};
+//		return WhenAllAwaiter{ *this };
+//	}
+//
+//	void await_resume()
+//	{
+//		printf("Await Resume WhenAllAwaitable \n");
+//	}
+//
+//	bool await_ready()
+//	{
+//		printf("Await Ready WhenAllAwaitable\n");
+//		return false;
+//	}
+//
+//	bool launch_tasks(std::coroutine_handle<> _coroHandle)noexcept
+//	{
+//		printf("launch_tasks WhenAllAwaitable\n");
+//		std::apply(
+//			[this](auto&... _task)->void
+//			{
+//				(_task.launchTask(m_counter), ...);
+//			}
+//			, m_taskList
+//		);
+//		return m_counter.try_await(_coroHandle);
+//	}
+//};
+//
+//
+//template<typename ...Args>
+//auto when_all(Args&& ... args)
+//{
+//	return WhenAllAwaitable{ std::make_tuple(makeWhenAllTask(args)...) };
+//
+//}
+//
 
-template< typename Awaitable>
-struct WhenAllTask
+
+struct WhenAllSequence
 {
-};
+	std::vector<TransmitTask> m_taskList;
 
-template<typename Awaitable>
-WhenAllTask<void> makeWhenAllTask(Awaitable awaitable)
-{
-	co_await awaitable;
-}
+	bool await_ready() const noexcept { return false; }
 
-template<typename ... Tasks>
-struct WhenAllAwaitable
-{
-	explicit WhenAllAwaitable(Tasks&& ... tasks) noexcept
-		:m_counter{ sizeof...(Tasks) }
-		,m_taskList(std::move(tasks)...)
+	void await_suspend(std::coroutine_handle<> handle)
 	{
-	}
-	explicit WhenAllAwaitable(std::tuple<Tasks...>&& tasks)noexcept
-		: m_counter(sizeof...(Tasks))
-		, m_taskList(std::move(tasks))
-	{}
-
-	WhenAllCounter m_counter;
-	std::tuple<Tasks...> m_taskList;
-
-	bool is_ready()
-	{
-		return m_counter.is_ready();
-	}
-
-	auto operator co_await() noexcept
-	{
-		struct WhenAllAwaiter
+		for(auto& task : m_taskList)
 		{
-			WhenAllAwaiter(WhenAllAwaitable& awaitable) noexcept
-				: m_awaitable(awaitable)
-			{}
-
-			bool await_ready() const noexcept
-			{
-				printf("When all awaiter await ready\n");
-				return m_awaitable.is_ready();
-			}
-
-			bool await_suspend(std::coroutine_handle<> awaitingCoroutine) noexcept
-			{
-				printf("When all await suspend \n");
-				return m_awaitable.launch_tasks(awaitingCoroutine);
-			}
-
-			std::tuple<Tasks...>& await_resume() noexcept
-			{
-				printf("When all await resume\n");
-				return m_awaitable.m_taskList;
-			}
-
-		private:
-
-			WhenAllAwaitable& m_awaitable;
-
-		};
-		return WhenAllAwaiter{ *this };
+			co_await task;
+		}
+		handle.resume();
 	}
 
 	void await_resume()
 	{
-		printf("Await Resume WhenAllAwaitable \n");
-	}
-
-	bool await_ready()
-	{
-		printf("Await Ready WhenAllAwaitable\n");
-		return false;
-	}
-
-	bool launch_tasks(std::coroutine_handle<> _coroHandle)noexcept
-	{
-		printf("launch_tasks WhenAllAwaitable\n");
-		std::apply(
-			[this](auto&... _task)
-			{
-				(_task.launch(&m_counter), ...);
-			}
-			, m_taskList
-		);
-		return m_counter.try_await(_coroHandle);
 	}
 };
 
 
-template<typename ...Args>
-auto when_all(Args&& ... args)
+template<typename ... Args>
+auto when_all_sequence(Args&& ... args)
 {
-	return WhenAllAwaitable{ std::forward_as_tuple(args...) };
+	std::vector<TransmitTask> m_taskList;
+	(m_taskList.push_back(std::forward<Args&&>(args)),...);
 
+	return WhenAllSequence{ std::move(m_taskList) };
 }
-
-static std::array tasks = 
-{
-	TransmitTask(1),
-	TransmitTask(2),
-	TransmitTask(3),
-	TransmitTask(4)
-};
 
 void initializeProcedure()
 {
 	//co_await sendCommand(1);
 	//co_await sendCommand(2);
 
-	co_await when_all(sendCommand(1), sendCommand(2), sendCommand(3));
+	//co_await when_all(sendCommand(1), sendCommand(2), sendCommand(3));
 
-	for (auto&& task : tasks) {
-		co_await task;
-	}
+	co_await when_all_sequence(sendCommand(1), sendCommand(2), sendCommand(3));
+	co_await when_all_sequence(sendCommand(4), sendCommand(5), sendCommand(6));
+	co_await when_all_sequence(sendCommand(7), sendCommand(8), sendCommand(9));
 }
-//
-//cppcoro::task<> transmitData()
-//{
-//	printf("Transmit Data\n");
-//}
-//
-//void initializeDisplay()
-//{
-//	co_await cppcoro::when_all(transmitData(), transmitData(), transmitData());
-//}
 
 int main()
 {
