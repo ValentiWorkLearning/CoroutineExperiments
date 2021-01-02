@@ -73,19 +73,10 @@ struct TransmitTask
 	{
 		printf("Await suspend Transmit\n");
 		using namespace std::chrono_literals;
-		auto pthread = std::thread([_coroHandle] { std::this_thread::sleep_for(2100ms); printf("Task completed!\n"); _coroHandle.resume(); });
+		std::uint8_t transmitValue = m_commandData;
+		auto pthread = std::thread([_coroHandle, transmitValue] { std::this_thread::sleep_for(2100ms); printf("Task completed!,Tansmitted %d\n", static_cast<std::uint16_t>(transmitValue)); _coroHandle.resume(); });
 		pthread.detach();
 		
-	}
-
-	void launch(WhenAllCounter* _pCounter)
-	{
-		printf("Started task!\n");
-		using namespace std::chrono_literals;
-		auto pthread = std::thread([_pCounter] { std::this_thread::sleep_for(2100ms); printf("Task completed!\n"); _pCounter->notify_awaitable_completed(); });
-
-		pthread.detach();
-		//_pCounter->notify_awaitable_completed();
 	}
 
 	std::uint8_t m_commandData;
@@ -291,20 +282,146 @@ struct std::coroutine_traits<void, Args ...>
 //}
 //
 
+struct VoidTask
+{
+	struct task_promise;
+	using promise_type = task_promise;
 
+	struct task_promise
+	{
+		task_promise()noexcept = default;
+		void return_void()noexcept {}
+		void unhandled_exception() noexcept
+		{
+			while(true)
+			{
+
+			}
+		}
+		VoidTask get_return_object()noexcept
+		{
+			return VoidTask{ std::coroutine_handle<task_promise>::from_promise(*this) };
+		}
+
+		auto initial_suspend()noexcept { return std::suspend_always{}; }
+
+		struct final_awaitable
+		{
+			bool await_ready()
+			{
+				return false;
+			}
+			template<typename TPromise>
+			void await_suspend(std::coroutine_handle<TPromise> coroutine)
+			{
+				task_promise& promise = coroutine.promise();
+				if (promise.m_state.exchange(true))
+				{
+					promise.m_continuation.resume();
+				}
+			}
+
+			void await_resume()
+			{
+			}
+		};
+
+		bool try_set_continuation(std::coroutine_handle<> continuation)
+		{
+			m_continuation = continuation;
+			return m_state = true;
+		}
+
+		auto final_suspend()
+		{
+			return final_awaitable{};
+		}
+
+		std::coroutine_handle<> m_continuation;
+		std::atomic_bool m_state{false};
+	};
+	
+	struct task_awaitable
+	{
+		task_awaitable(std::coroutine_handle<promise_type> coroutine)
+			: m_coroutine{coroutine}
+		{
+		}
+		bool await_ready()const noexcept
+		{
+			return !m_coroutine || m_coroutine.done();
+		}
+		bool await_suspend( std::coroutine_handle<> awaitingRoutine )
+		{
+			m_coroutine.resume();
+			return m_coroutine.promise().try_set_continuation(awaitingRoutine);
+		}
+
+		void await_resume()
+		{
+		}
+
+		std::coroutine_handle<promise_type> m_coroutine;
+	};
+
+	VoidTask(std::coroutine_handle<task_promise> suspendedCoroutine)
+		:	m_coroutine{suspendedCoroutine}
+	{
+	}
+
+	~VoidTask()
+	{
+		if(m_coroutine)
+			m_coroutine.destroy();
+	}
+
+	bool await_ready() const noexcept
+	{
+		return !m_coroutine||m_coroutine.done();
+	}
+
+	auto operator co_await() noexcept
+	{
+		return task_awaitable{ m_coroutine };
+	}
+
+	void await_resume()
+	{
+	}
+
+	std::coroutine_handle<promise_type> m_coroutine;
+};
+
+template<typename ... Tasks>
 struct WhenAllSequence
 {
-	std::vector<TransmitTask> m_taskList;
+	std::tuple<Tasks...> m_taskList;
+
+	explicit WhenAllSequence(Tasks&& ... tasks) noexcept
+		:	m_taskList(std::move(tasks)...)
+	{
+	}
+
+	explicit WhenAllSequence(std::tuple<Tasks...>&& tasks)noexcept
+		:	m_taskList(std::move(tasks))
+	{
+	}
 
 	bool await_ready() const noexcept { return false; }
 
 	void await_suspend(std::coroutine_handle<> handle)
 	{
-		for(auto& task : m_taskList)
-		{
-			co_await task;
-		}
+		co_await std::apply(
+				[](auto ... task)->VoidTask
+				{
+					(co_await task, ...);
+
+					printf("std::apply! completed\n");
+				}
+			,	m_taskList
+		);
 		handle.resume();
+		printf("Requested coroytine resume\n");
 	}
 
 	void await_resume()
@@ -316,22 +433,21 @@ struct WhenAllSequence
 template<typename ... Args>
 auto when_all_sequence(Args&& ... args)
 {
-	std::vector<TransmitTask> m_taskList;
-	(m_taskList.push_back(std::forward<Args&&>(args)),...);
 
-	return WhenAllSequence{ std::move(m_taskList) };
+	return WhenAllSequence{ std::make_tuple(std::move(args)...) };
+}
+
+auto sequenceTransmit(int forTest)
+{
+	return when_all_sequence(sendCommand(11 + forTest), sendCommand(12 + forTest));
 }
 
 void initializeProcedure()
 {
-	//co_await sendCommand(1);
-	//co_await sendCommand(2);
-
-	//co_await when_all(sendCommand(1), sendCommand(2), sendCommand(3));
-
 	co_await when_all_sequence(sendCommand(1), sendCommand(2), sendCommand(3));
 	co_await when_all_sequence(sendCommand(4), sendCommand(5), sendCommand(6));
 	co_await when_all_sequence(sendCommand(7), sendCommand(8), sendCommand(9));
+	co_await when_all_sequence(sequenceTransmit(1), sequenceTransmit(2));
 }
 
 int main()
