@@ -315,21 +315,18 @@ struct VoidTask
 			void await_suspend(std::coroutine_handle<TPromise> coroutine)
 			{
 				task_promise& promise = coroutine.promise();
-				if (promise.m_state.exchange(true))
+				if (promise.m_continuation)
 				{
 					promise.m_continuation.resume();
 				}
 			}
 
-			void await_resume()
-			{
-			}
+			void await_resume(){}
 		};
 
-		bool try_set_continuation(std::coroutine_handle<> continuation)
+		void set_continuation(std::coroutine_handle<> continuation)
 		{
 			m_continuation = continuation;
-			return m_state = true;
 		}
 
 		auto final_suspend()
@@ -338,7 +335,6 @@ struct VoidTask
 		}
 
 		std::coroutine_handle<> m_continuation;
-		std::atomic_bool m_state{false};
 	};
 	
 	struct task_awaitable
@@ -351,10 +347,10 @@ struct VoidTask
 		{
 			return !m_coroutine || m_coroutine.done();
 		}
-		bool await_suspend( std::coroutine_handle<> awaitingRoutine )
+		void await_suspend( std::coroutine_handle<> awaitingRoutine )
 		{
 			m_coroutine.resume();
-			return m_coroutine.promise().try_set_continuation(awaitingRoutine);
+			m_coroutine.promise().set_continuation(awaitingRoutine);
 		}
 
 		void await_resume()
