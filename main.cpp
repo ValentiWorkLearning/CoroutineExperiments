@@ -223,7 +223,7 @@ struct WhenAllSequence
 	{
 		co_await launchAll(std::make_integer_sequence<std::size_t, sizeof...(Tasks)>{});
 		handle.resume();
-		printf("Requested coroytine resume\n");
+		printf("Requested coroutine resume\n");
 	}
 
 	template<std::size_t... Indexes>
