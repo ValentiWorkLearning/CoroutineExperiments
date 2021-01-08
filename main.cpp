@@ -43,7 +43,7 @@ struct TransmitTask
 		printf("Await suspend Transmit\n");
 		using namespace std::chrono_literals;
 		std::uint8_t transmitValue = m_commandData;
-		auto pthread = std::thread([_coroHandle, transmitValue]()mutable { std::this_thread::sleep_for(2100ms); printf("Task completed!,Tansmitted %d\n", static_cast<std::uint16_t>(transmitValue)); _coroHandle.resume(); });
+		auto pthread = std::thread([_coroHandle, transmitValue]()mutable { std::this_thread::sleep_for(10ms); printf("Task completed!,Tansmitted %d\n", static_cast<std::uint16_t>(transmitValue)); _coroHandle.resume(); });
 		pthread.detach();
 
 	}
@@ -247,10 +247,44 @@ auto when_all_sequence(Args&& ... args) noexcept
 	return WhenAllSequence{ std::make_tuple(std::move(args)...) };
 }
 
+struct Event
+{
+	Event(bool isSet)
+		:	m_isSet{isSet}
+	{
+	}
+	
+	bool await_ready()noexcept
+	{
+		return m_isSet;
+	}
+
+	void await_suspend( stdcoro::coroutine_handle<> handle )
+	{
+		m_continuation = handle;
+	}
+
+	void await_resume()
+	{
+	}
+
+	void set()
+	{
+		m_isSet.store(true);
+		if(m_continuation && !m_continuation.done())
+			m_continuation.resume();
+	}
+
+	std::atomic_bool m_isSet;
+	stdcoro::coroutine_handle<> m_continuation;
+};
+
 auto sequenceTransmit(int forTest)noexcept
 {
 	return when_all_sequence(sendCommand(11 + forTest), sendCommand(12 + forTest));
 }
+
+Event initializedEvent{ false };
 
 void initializeProcedure() noexcept
 {
@@ -258,12 +292,23 @@ void initializeProcedure() noexcept
 	co_await when_all_sequence(sendCommand(4), sendCommand(5), sendCommand(6));
 	co_await when_all_sequence(sendCommand(7), sendCommand(8), sendCommand(9));
 	co_await when_all_sequence(sequenceTransmit(1), sequenceTransmit(2));
+
+	initializedEvent.set();
+}
+
+void awaitForEvent()noexcept
+{
+	co_await initializedEvent;
+	printf("Event awaiter resumed\n");
+	co_await initializedEvent;
+	printf("Event awaiter resumed immediately\n");
 }
 
 int main()
 {
 
 	initializeProcedure();
+	awaitForEvent();
 
 	while (true)
 	{
